@@ -1,0 +1,13 @@
+node_modules/
+dist/
+build/
+bin/
+obj/
+*.db
+*.db-wal
+*.db-shm
+.env
+.env.local
+*.log
+.vs/
+*.user
