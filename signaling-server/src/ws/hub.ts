@@ -3,7 +3,7 @@ import { IncomingMessage } from "node:http";
 import { WebSocket, WebSocketServer } from "ws";
 import { db } from "../db";
 import { env } from "../env";
-import { getUserById, verifyUserToken, verifyHostToken } from "../auth";
+import { verifyHostToken } from "../auth";
 import {
   checkAndConsumePairingCode,
   createPairingCode,
@@ -21,8 +21,10 @@ type HostConn = {
 type ControllerConn = {
   kind: "controller";
   ws: WebSocket;
-  userId: number;
-  email: string;
+  // No accounts: this is just whatever name the controller typed in before
+  // connecting (e.g. "Sara's laptop"), shown to the host in the approval
+  // prompt. It is not verified or unique.
+  displayName: string;
   sessionId: string | null;
 };
 
@@ -119,24 +121,18 @@ export function attachSignalingHub(wss: WebSocketServer) {
           return;
         }
 
-        if (msg.type === "controller:auth") {
-          const payload = verifyUserToken(String(msg.token ?? ""));
-          const user = payload && getUserById(payload.sub);
-          if (!payload || !user) {
-            send(ws, { type: "controller:auth-failed", reason: "invalid_token" });
-            return ws.close(4003, "auth failed");
-          }
+        if (msg.type === "controller:hello") {
+          const displayName = String(msg.displayName ?? "").trim().slice(0, 64) || "Someone";
           authed = true;
           clearTimeout(timeout);
           const controllerConn: ControllerConn = {
             kind: "controller",
             ws,
-            userId: user.id,
-            email: user.email,
+            displayName,
             sessionId: null,
           };
           connMeta.set(ws, controllerConn);
-          send(ws, { type: "controller:auth-ok", email: user.email, iceServers: env.iceServers });
+          send(ws, { type: "controller:hello-ok", iceServers: env.iceServers });
           return;
         }
 
@@ -180,8 +176,8 @@ export function attachSignalingHub(wss: WebSocketServer) {
           pending.controller.sessionId = sessionId;
 
           db.prepare(
-            "INSERT INTO sessions (id, device_id, controller_user_id, status, created_at) VALUES (?, ?, ?, 'active', ?)"
-          ).run(sessionId, host.deviceId, pending.controller.userId, Date.now());
+            "INSERT INTO sessions (id, device_id, controller_name, status, created_at) VALUES (?, ?, ?, 'active', ?)"
+          ).run(sessionId, host.deviceId, pending.controller.displayName, Date.now());
 
           send(host.ws, { type: "session:started", sessionId, role: "host" });
           send(pending.controller.ws, {
@@ -231,7 +227,7 @@ export function attachSignalingHub(wss: WebSocketServer) {
           send(host.ws, {
             type: "pairing:incoming-request",
             sessionRequestId,
-            controllerEmail: controller.email,
+            controllerName: controller.displayName,
             requestedAt: Date.now(),
           });
           // Auto-expire the approval prompt so a host can't leave a stale

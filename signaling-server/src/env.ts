@@ -1,15 +1,8 @@
 import "dotenv/config";
 import path from "node:path";
 
-function required(name: string, fallback?: string): string {
-  const v = process.env[name] ?? fallback;
-  if (v === undefined) throw new Error(`Missing required env var ${name}`);
-  return v;
-}
-
 export const env = {
   port: Number(process.env.PORT ?? 8443),
-  jwtSecret: required("JWT_SECRET", "dev-only-insecure-secret-change-me"),
   dbPath: path.resolve(process.env.DB_PATH ?? "./data/remote-desktop.db"),
   allowedOrigins: (process.env.ALLOWED_ORIGINS ?? "http://localhost:5173")
     .split(",")
@@ -25,7 +18,3 @@ export const env = {
   ) as Array<{ urls: string; username?: string; credential?: string }>,
   isProd: process.env.NODE_ENV === "production",
 };
-
-if (env.isProd && env.jwtSecret === "dev-only-insecure-secret-change-me") {
-  throw new Error("Refusing to start in production with the default JWT_SECRET. Set a real one in .env");
-}

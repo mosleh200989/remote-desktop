@@ -12,6 +12,7 @@ interface RtcSessionCallbacks {
   onRemoteStream: (stream: MediaStream) => void;
   onConnectionState: (state: RTCPeerConnectionState) => void;
   onDataChannelOpen: () => void;
+  onFilesChannelOpen: (dc: RTCDataChannel) => void;
 }
 
 /**
@@ -23,6 +24,7 @@ interface RtcSessionCallbacks {
 export class RtcSession {
   readonly pc: RTCPeerConnection;
   private dataChannel: RTCDataChannel;
+  private filesChannel: RTCDataChannel;
   private unsubscribe: () => void;
   private signaling: SignalingSocket;
   private sessionId: string;
@@ -40,6 +42,10 @@ export class RtcSession {
 
     this.dataChannel = this.pc.createDataChannel("control", { ordered: true });
     this.dataChannel.onopen = () => callbacks.onDataChannelOpen();
+
+    // Separate channel for file transfer so a big file never delays input.
+    this.filesChannel = this.pc.createDataChannel("files", { ordered: true });
+    this.filesChannel.onopen = () => callbacks.onFilesChannelOpen(this.filesChannel);
 
     this.pc.ontrack = (ev) => {
       if (ev.streams[0]) callbacks.onRemoteStream(ev.streams[0]);
@@ -99,6 +105,7 @@ export class RtcSession {
   close() {
     this.unsubscribe();
     this.dataChannel.close();
+    this.filesChannel.close();
     this.pc.close();
   }
 

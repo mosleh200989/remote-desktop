@@ -25,6 +25,7 @@ public sealed class PeerConnectionManager : IDisposable
     public event Action<string>? OnControlMessage;
     public event Action<RTCPeerConnectionState>? OnConnectionStateChanged;
     public event Action? OnDataChannelOpen;
+    public event Action<FileTransferChannel>? OnFilesChannelReady;
 
     public PeerConnectionManager(List<RTCIceServer> iceServers)
     {
@@ -52,8 +53,19 @@ public sealed class PeerConnectionManager : IDisposable
         _pc.onconnectionstatechange += state => OnConnectionStateChanged?.Invoke(state);
         _pc.ondatachannel += dc =>
         {
+            // The controller (offerer, whether the web app or another exe in
+            // controller mode) creates both channels; we just route by label.
+            if (dc.label == "files")
+            {
+                OnFilesChannelReady?.Invoke(new FileTransferChannel(dc));
+                return;
+            }
             _dataChannel = dc;
-            dc.onmessage += (_, _, data) => OnControlMessage?.Invoke(Encoding.UTF8.GetString(data));
+            dc.onmessage += (_, protocol, data) =>
+            {
+                if (protocol == DataChannelPayloadProtocols.WebRTC_String)
+                    OnControlMessage?.Invoke(Encoding.UTF8.GetString(data));
+            };
             dc.onopen += () => OnDataChannelOpen?.Invoke();
         };
     }

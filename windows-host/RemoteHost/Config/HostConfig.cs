@@ -13,6 +13,9 @@ public class HostConfig
     public int MonitorAdapterIndex { get; set; } = 0;
     public int MonitorOutputIndex { get; set; } = 0;
 
+    /// <summary>Shown to a host when this same install connects out as a controller.</summary>
+    public string ControllerDisplayName { get; set; } = System.Environment.MachineName;
+
     private static string ConfigPath =>
         Path.Combine(
             System.Environment.GetFolderPath(System.Environment.SpecialFolder.ApplicationData),

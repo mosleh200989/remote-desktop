@@ -9,15 +9,10 @@ export interface PairedSession {
   iceServers: IceServerConfig[];
 }
 
-export function PairForm({
-  token,
-  onPaired,
-  onLogout,
-}: {
-  token: string;
-  onPaired: (session: PairedSession) => void;
-  onLogout: () => void;
-}) {
+const NAME_KEY = "rd_display_name";
+
+export function PairForm({ onPaired }: { onPaired: (session: PairedSession) => void }) {
+  const [displayName, setDisplayName] = useState(() => localStorage.getItem(NAME_KEY) ?? "");
   const [deviceId, setDeviceId] = useState("");
   const [code, setCode] = useState("");
   const [status, setStatus] = useState<string | null>(null);
@@ -25,9 +20,10 @@ export function PairForm({
 
   async function submit(e: FormEvent) {
     e.preventDefault();
+    localStorage.setItem(NAME_KEY, displayName);
     setBusy(true);
     setStatus("Connecting to signaling server...");
-    const signaling = new SignalingSocket(token);
+    const signaling = new SignalingSocket(displayName.trim() || "Someone");
     try {
       const { iceServers } = await signaling.authenticate();
       setStatus("Requesting access from the host...");
@@ -65,14 +61,20 @@ export function PairForm({
 
   return (
     <div className="card">
-      <div className="row-between">
-        <h1>Pair a device</h1>
-        <button className="link" onClick={onLogout}>
-          Sign out
-        </button>
-      </div>
+      <h1>Remote Desktop</h1>
       <p className="subtitle">Enter the device ID and pairing code shown on the Windows host.</p>
       <form onSubmit={submit}>
+        <label>
+          Your name (shown to the host)
+          <input
+            required
+            placeholder="e.g. Sara's laptop"
+            value={displayName}
+            onChange={(e) => setDisplayName(e.target.value)}
+            disabled={busy}
+            maxLength={64}
+          />
+        </label>
         <label>
           Device ID
           <input

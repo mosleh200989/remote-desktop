@@ -1,0 +1,24 @@
+<Window x:Class="RemoteHost.Views.ConnectWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Connect to another computer" Height="360" Width="380"
+        WindowStartupLocation="CenterOwner" ResizeMode="NoResize">
+    <StackPanel Margin="20">
+        <TextBlock Text="Connect to another computer" FontSize="16" FontWeight="Bold" Margin="0,0,0,4"/>
+        <TextBlock Text="Enter the device ID and pairing code shown on the other computer's Remote Desktop Host window." TextWrapping="Wrap" Foreground="Gray" Margin="0,0,0,16"/>
+
+        <TextBlock Text="Your name (shown to them)"/>
+        <TextBox x:Name="DisplayNameBox" Margin="0,2,0,12"/>
+
+        <TextBlock Text="Device ID"/>
+        <TextBox x:Name="DeviceIdBox" Margin="0,2,0,12"/>
+
+        <TextBlock Text="Pairing code"/>
+        <TextBox x:Name="CodeBox" CharacterCasing="Upper" Margin="0,2,0,16"/>
+
+        <TextBlock x:Name="ErrorText" Foreground="Red" TextWrapping="Wrap" Margin="0,0,0,8" Visibility="Collapsed"/>
+        <TextBlock x:Name="StatusText" Foreground="Gray" TextWrapping="Wrap" Margin="0,0,0,8" Visibility="Collapsed"/>
+
+        <Button x:Name="ConnectButton" Content="Connect" Height="34" Click="ConnectButton_Click"/>
+    </StackPanel>
+</Window>

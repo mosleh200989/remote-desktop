@@ -18,7 +18,6 @@ const pairingCodeAlphabet = customAlphabet(
 export interface DeviceRow {
   id: number;
   device_id: string;
-  owner_user_id: number;
   host_token_hash: string;
   name: string;
   created_at: number;
@@ -26,7 +25,6 @@ export interface DeviceRow {
 }
 
 export async function registerDevice(
-  ownerUserId: number,
   name: string
 ): Promise<{ device: DeviceRow; hostToken: string }> {
   const deviceId = deviceIdAlphabet();
@@ -34,12 +32,27 @@ export async function registerDevice(
   const hostTokenHash = await hashHostToken(hostToken);
 
   db.prepare(
-    `INSERT INTO devices (device_id, owner_user_id, host_token_hash, name, created_at)
-     VALUES (?, ?, ?, ?, ?)`
-  ).run(deviceId, ownerUserId, hostTokenHash, name, Date.now());
+    `INSERT INTO devices (device_id, host_token_hash, name, created_at)
+     VALUES (?, ?, ?, ?)`
+  ).run(deviceId, hostTokenHash, name, Date.now());
 
   const device = getDeviceByDeviceId(deviceId)!;
   return { device, hostToken };
+}
+
+// No accounts means device registration is otherwise open, so rate-limit it
+// per IP to blunt someone spamming rows into the devices table.
+export function checkAndConsumeRegistrationRateLimit(ip: string): boolean {
+  const windowStart = Date.now() - 3_600_000;
+  const recent = db
+    .prepare("SELECT COUNT(*) as n FROM device_registrations WHERE ip = ? AND registered_at > ?")
+    .get(ip, windowStart) as { n: number };
+  if (recent.n >= 10) return false;
+  db.prepare("INSERT INTO device_registrations (ip, registered_at) VALUES (?, ?)").run(
+    ip,
+    Date.now()
+  );
+  return true;
 }
 
 export function getDeviceByDeviceId(deviceId: string): DeviceRow | undefined {
@@ -112,4 +125,5 @@ export function clearExpiredPairingArtifacts(): void {
   db.prepare("DELETE FROM pairing_attempts WHERE attempted_at < ?").run(
     now - env.pairingLockoutWindowSeconds * 1000
   );
+  db.prepare("DELETE FROM device_registrations WHERE registered_at < ?").run(now - 3_600_000);
 }

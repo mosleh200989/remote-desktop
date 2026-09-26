@@ -1,45 +1,63 @@
 # Self-Hosted Remote Desktop
 
-Attended, self-hosted remote desktop for your own Windows computers: a Windows
-host app, a signaling server you run on your own VPS, and a responsive web
-controller usable from Android Chrome or any desktop browser. Screen and
-input travel peer-to-peer over WebRTC once your VPS has helped the two
-devices find each other.
+Attended, self-hosted remote desktop for your own Windows computers - no
+accounts, just a device ID + pairing code, like AnyDesk. Install the same
+Windows app on two computers and either one can control the other directly,
+or control a computer from Android Chrome / any desktop browser. File
+transfer works in both directions. Screen and input travel peer-to-peer over
+WebRTC once your VPS has helped the two devices find each other.
 
 ## Architecture
 
 ```
-┌─────────────────┐        WebSocket (auth, pairing,        ┌──────────────────┐
-│  Windows Host    │◄──────  SDP/ICE relay only) ──────────►│  Web Controller  │
-│  (WPF, .NET 8)   │        wss://your-vps/ws                │ (React, Vite)    │
-└────────┬─────────┘                                          └────────┬─────────┘
+┌─────────────────┐        WebSocket (pairing,               ┌──────────────────┐
+│  Windows exe     │◄──────  SDP/ICE relay only) ───────────►│  Windows exe      │
+│  (host role)     │        wss://your-vps/ws                 │ (controller role) │
+└────────┬─────────┘                 or                       └────────┬─────────┘
          │                 ┌──────────────────┐                        │
-         │  screen (VP8)   │  Signaling server │   REST (login/pair)   │
-         └───────WebRTC────┤  Node + Express   │◄───────────────────────┘
-             + control     │  + ws, on your VPS │
-              data channel └─────────┬──────────┘
+         │  screen (VP8)   │  Signaling server │                       │
+         │  + control +    │  Node + Express   │      ...or a web       │
+         └──────WebRTC─────┤  + ws, on your VPS │◄────browser controller┘
+          files channels   └─────────┬──────────┘     (React, Vite)
                                      │
                               ┌──────┴──────┐
                               │   coturn    │  (TURN relay, same VPS)
                               └─────────────┘
 ```
 
-- **Windows host** (`windows-host/`): C# / .NET 8 WPF app. Captures the screen
-  via DXGI Desktop Duplication, encodes VP8 via SIPSorcery, injects mouse/
-  keyboard via `SendInput`, and is always the WebRTC *answerer*.
-- **Signaling server** (`signaling-server/`): Node + TypeScript. Owns
-  accounts, pairing codes, and session authorization; relays WebRTC signaling
-  but never sees screen/input content (that's peer-to-peer/TURN-relayed,
-  end-to-end DTLS-SRTP encrypted).
-- **Web controller** (`web-controller/`): React + TypeScript + Vite. Login,
-  enter device ID + pairing code, full-screen viewer with mouse/touch/
-  keyboard controls. Always the WebRTC *offerer*.
+- **Windows app** (`windows-host/`): C# / .NET 8 WPF app that can act as
+  either role from the same install:
+  - **Host role**: captures the screen via DXGI Desktop Duplication, encodes
+    VP8 via SIPSorcery, injects mouse/keyboard via `SendInput`. Always the
+    WebRTC *answerer*.
+  - **Controller role** ("Connect to another computer..."): decodes the
+    incoming VP8 video and renders it, captures local mouse/keyboard/typed
+    text and forwards it. Always the WebRTC *offerer*.
+- **Signaling server** (`signaling-server/`): Node + TypeScript. No user
+  accounts - a device just registers itself and gets a device ID + private
+  host token; a controller just gives a display name. Owns pairing codes and
+  session authorization; relays WebRTC signaling but never sees screen/input/
+  file content (that's peer-to-peer/TURN-relayed, end-to-end DTLS-SRTP
+  encrypted).
+- **Web controller** (`web-controller/`): React + TypeScript + Vite, for
+  controlling a host from Android Chrome or a desktop browser instead of the
+  exe. Enter a name + device ID + pairing code, full-screen viewer, file
+  transfer panel. Always the WebRTC *offerer*.
 - **coturn**: TURN relay so connections still work when direct peer-to-peer
   fails (symmetric NATs, restrictive networks) - the acceptance scenario
   ("two different networks") depends on this.
+- **File transfer**: a dedicated `"files"` WebRTC data channel, separate from
+  the `"control"` channel so a large transfer never delays mouse/keyboard
+  input. Either side can offer a file; the receiving side must explicitly
+  accept before any bytes flow. Peer-to-peer only, same as video/input.
 
 ### Why this stack
 
+- **No accounts, AnyDesk-style pairing**: the device ID + short-lived,
+  single-use pairing code + the host's explicit accept are the entire
+  authorization boundary - simpler to use, and no weaker than the account
+  system it replaced, since that JWT layer was mostly bookkeeping, not the
+  actual security gate.
 - **Signaling server in Node/TypeScript**: WebSocket + REST is a natural fit,
   and `node:sqlite` (built into Node 22.5+) avoids a native-compile toolchain
   entirely - the first attempt used `better-sqlite3`, which needed a full
@@ -49,17 +67,19 @@ devices find each other.
 - **Web controller in React/Vite**: works unmodified on desktop Chrome/Firefox
   and Android Chrome; a Pointer Events-based gesture engine covers mouse and
   touch with one code path.
-- **Windows host in C# / SIPSorcery**: SIPSorcery is a pure-managed WebRTC
+- **Windows app in C# / SIPSorcery**: SIPSorcery is a pure-managed WebRTC
   stack (no native WebRTC library to cross-compile for Windows), and DXGI
   Desktop Duplication + `SendInput` are the standard, supported Win32 APIs
-  for screen capture and input injection respectively.
+  for screen capture and input injection respectively. The same
+  `VideoEncoderEndPoint` class is reused as both encoder (host role) and
+  decoder (controller role).
 
 ## Repository layout
 
 ```
-signaling-server/    Node/TypeScript signaling + pairing + auth server
+signaling-server/    Node/TypeScript signaling + pairing server (no accounts)
 web-controller/      React/Vite web app (desktop + Android Chrome)
-windows-host/        C# .NET 8 WPF host app
+windows-host/        C# .NET 8 WPF app - can act as host or controller
   RemoteHost/             the shipped app
   RemoteHost.TestHarness/ headless dev-only smoke test (see its warning header)
 deploy/              docker-compose, coturn config, nginx config
@@ -67,7 +87,7 @@ deploy/              docker-compose, coturn config, nginx config
 
 ## Requirements
 
-- **Dev machine building the Windows host**: Windows 10/11, [.NET 8 SDK](https://dotnet.microsoft.com/download/dotnet/8.0).
+- **Dev machine building the Windows app**: Windows 10/11, [.NET 8 SDK](https://dotnet.microsoft.com/download/dotnet/8.0).
 - **Signaling server / web controller**: Node.js 22.5+ (Node 24 recommended).
 - **VPS**: Ubuntu 22.04+, a domain name pointed at it, ports 80/443/3478 (+
   49160-49200 UDP for TURN) open.
@@ -92,15 +112,17 @@ npm run dev                   # opens on :5173
 cd windows-host
 dotnet run --project RemoteHost
 ```
-On first launch the host app asks for the signaling server URL
-(`http://localhost:8443` for this local test) plus an email/password - it
-registers that account and this device automatically. It then shows a
-**device ID** and **pairing code**.
+On first launch the app asks for the signaling server URL
+(`http://localhost:8443` for this local test), a name for this computer, and
+your own display name (shown to hosts when you connect out to them) - no
+account, no password. It registers itself and shows a **device ID** and
+**pairing code**.
 
-Open `http://localhost:5173` in a browser, sign in (register if it's a new
-account), enter that device ID + code, and approve the request in the host
-app's window. You should see your own screen and be able to click/type into
-it.
+To control it: either open `http://localhost:5173` in a browser and enter
+your name + that device ID + code, or run a second copy of the exe and click
+**Connect to another computer...**. Approve the request in the first
+window, and you should see that computer's screen and be able to click/type
+into it and send it a file.
 
 ## 2. Deploy the signaling server + TURN to your VPS
 
@@ -129,8 +151,7 @@ Configure and start the signaling server + coturn:
 cd deploy
 cp .env.example .env
 cp coturn/turnserver.conf.example coturn/turnserver.conf
-# Edit .env: set JWT_SECRET (see the comment in .env.example for how to
-# generate one), ALLOWED_ORIGINS to https://YOUR_REAL_DOMAIN, and ICE_SERVERS
+# Edit .env: set ALLOWED_ORIGINS to https://YOUR_REAL_DOMAIN, and ICE_SERVERS
 # with your TURN credentials.
 # Edit coturn/turnserver.conf: set external-ip, realm, and a real password
 # matching what you put in .env's ICE_SERVERS.
@@ -160,7 +181,7 @@ sudo ufw allow 3478/udp
 sudo ufw allow 49160:49200/udp
 ```
 
-## 3. Set up a Windows host for real use
+## 3. Set up the Windows app for real use
 
 ```powershell
 winget install --id Microsoft.DotNet.SDK.8
@@ -168,9 +189,9 @@ git clone <your fork of this repo>
 cd remote-desktop\windows-host
 dotnet publish RemoteHost -c Release -r win-x64 --self-contained false -o .\publish
 ```
-Run `publish\RemoteHost.exe` on the computer you want to control. On first
-run, give it `https://YOUR_REAL_DOMAIN` as the server URL and sign in/
-register. It saves its device ID + a private host token under
+Copy `publish\` (or just `RemoteHost.exe` plus the files next to it) to each
+computer. On first run, give it `https://YOUR_REAL_DOMAIN` as the server URL.
+It saves its device ID + a private host token locally under
 `%APPDATA%\RemoteDesktopHost\device.json` (delete that file to re-run setup).
 
 To start it automatically at login, put a shortcut to `RemoteHost.exe` in
@@ -178,15 +199,19 @@ To start it automatically at login, put a shortcut to `RemoteHost.exe` in
 
 ## Using it
 
-1. Host app shows a **device ID** and an 8-character **pairing code** that
+1. The app shows a **device ID** and an 8-character **pairing code** that
    expires after 3 minutes.
-2. On the controller (Android Chrome or any desktop browser), sign in, enter
-   the device ID + code, and request access.
+2. On the controlling side - either the same exe on another computer
+   (**Connect to another computer...**) or the web controller on Android
+   Chrome/any browser - enter your name, the device ID, and the code.
 3. The host app shows the request with **Accept**/**Reject** - nothing is
    controllable until you accept.
 4. Once accepted: full-screen view, click/drag/scroll/right-click (long-press
-   on touch) work immediately; tap **Keyboard** to type.
-5. **End session** on either side closes the connection immediately. Only one
+   on touch, on the web controller) work immediately; type directly (exe) or
+   tap **Keyboard** (web) to send text.
+5. Click **Files** on either side to send a file - the other side must
+   explicitly accept before any bytes transfer.
+6. **End session** on either side closes the connection immediately. Only one
    controller is allowed per device at a time; the host can revoke access at
    any moment via **End session now** in its window, and a red banner is
    shown across the top of the host's screen for the entire duration of any
@@ -212,11 +237,19 @@ To start it automatically at login, put a shortcut to `RemoteHost.exe` in
 - **Video is capped at ~15 fps** and CPU-encoded VP8 - fine for
   admin/remote-work use, not for video/games. Raising the cap is a one-line
   change (`HostService`'s frame-rate gate) if your CPU has headroom.
-- **Keyboard shortcuts and typed text only work while the controller's
-  on-screen keyboard is focused** (the "⌨ Keyboard" button) - a physical
-  keyboard typed directly at the video element is not forwarded, by design,
-  to avoid hijacking normal browser shortcuts on the controller side.
-- **No clipboard sync, file transfer, remote shell, or session recording** -
+- **Keyboard shortcuts combined with modifiers (Ctrl+C, Ctrl+Alt+Delete-style
+  combos, etc.) are not fully reliable.** Named/control keys (Enter, arrows,
+  Backspace, F-keys, modifiers themselves) are forwarded as real key presses;
+  plain typed text is forwarded as Unicode text input. A letter typed *while
+  a modifier is held* currently also goes through the Unicode path rather
+  than a real virtual-key press, which Windows does not treat as a
+  keyboard-accelerator combination. Plain typing and navigation work fully;
+  a real per-character virtual-key mapping (e.g. via `VkKeyScan`) would be
+  needed to fix shortcuts, and is a good next improvement.
+- **File transfer is one file at a time per direction**, with a 2GB soft cap
+  on the web controller side (the exe side streams from/to disk directly and
+  has no hard cap, but very large transfers are untested).
+- **No clipboard sync, remote shell, webcam/mic, or session recording** -
   intentionally out of scope for this version (see Security review).
 - **One controller at a time**, attended access only - no unattended/silent
   mode, by design.
@@ -230,8 +263,11 @@ To start it automatically at login, put a shortcut to `RemoteHost.exe` in
   peer-to-peer (or via TURN, which only relays already-encrypted packets).
   The signaling/REST layer must be served over TLS (nginx + certbot above) -
   never deploy `ws://`/`http://` to a real domain.
-- **Passwords**: hashed with bcrypt (cost 12), never logged. JWTs are
-  short-lived (12h) session tokens, not the password itself.
+- **No accounts, by design**: there are no passwords to leak or reuse across
+  services. The device ID (not secret, just an identifier) plus an 8-char,
+  single-use, 3-minute pairing code plus the host's own explicit accept are
+  the entire authorization boundary - the same model AnyDesk/TeamViewer use
+  for ad-hoc sessions.
 - **Host identity**: each device gets a long-lived, high-entropy bearer token
   (`crypto.randomBytes(32)`), stored server-side only as a bcrypt hash - a
   server compromise doesn't hand over usable host tokens. The token lives
@@ -252,42 +288,58 @@ To start it automatically at login, put a shortcut to `RemoteHost.exe` in
   lock screen, or any secure-desktop boundary - `SendInput` simply cannot
   deliver input to those surfaces, which is standard Windows behavior, not
   something this app works around.
-- **Least data**: the server never sees screen content, keystrokes, or mouse
-  movements - only signaling metadata (who's pairing with whom, SDP/ICE
-  blobs). No clipboard, file transfer, or session recording exist in this
-  version to keep the exposure surface minimal.
-- **Rate limiting**: login/register are rate-limited per IP (8/min) against
-  credential stuffing; pairing attempts are rate-limited per device as above.
+- **File transfer**: peer-to-peer over its own data channel, and the
+  receiving side must explicitly click Accept before any bytes arrive -
+  there is no silent/automatic file write in either direction. Received
+  files are written wherever the recipient chooses via a normal Save dialog
+  (exe) or the browser's own download flow (web); nothing is auto-executed.
+- **Least data**: the server never sees screen content, keystrokes, mouse
+  movements, or file contents/names - only signaling metadata (who's pairing
+  with whom, SDP/ICE blobs). No clipboard sync, remote shell, or session
+  recording exist in this version to keep the exposure surface minimal.
+- **Rate limiting**: anonymous device registration is rate-limited per IP
+  (10/hour) to blunt row-spamming now that it needs no account; pairing
+  attempts are rate-limited per device as above.
 - **Residual risks / what you're trusting**: (1) the VPS itself - anyone with
   root there could observe pairing metadata and modify server code, so use a
-  VPS you trust and keep it patched; (2) `JWT_SECRET` must be kept secret and
-  rotated if ever leaked (this invalidates all sessions); (3) this review
-  covers the code as written, not a substitute for a professional pentest if
-  you plan to expose this beyond personal use.
+  VPS you trust and keep it patched; (2) anyone who has both the device ID
+  and a still-valid pairing code, and the host clicks Accept, is trusted -
+  the host operator is the last line of defense, exactly as with AnyDesk;
+  (3) this review covers the code as written, not a substitute for a
+  professional pentest if you plan to expose this beyond personal use.
 
 ## Verification performed
 
 - Signaling server: automated end-to-end test (`signaling-server/src/test/e2e.ts`)
-  covering register → pair → wrong-code rejection → single-use enforcement →
-  host approval → signal relay → session end, run against the real server.
+  covering anonymous device registration → pair → wrong-code rejection →
+  single-use enforcement → host approval → signal relay → session end, run
+  against the real server with the current no-account protocol.
 - Web controller: driven through an actual browser against a scripted fake
-  host - register/login, pairing (including rejection paths), and a real
-  `RTCPeerConnection` offer/ICE exchange were all confirmed.
-- Windows host: built and run for real on a Windows 11 machine. Confirmed
-  real DXGI screen capture, real VP8 encoding via SIPSorcery, a real
-  browser-to-host WebRTC negotiation reaching `connected`, **live video of
-  the real desktop rendering in the browser**, and a real `SendInput` mouse
-  click landing at the correct screen location (verified by reading the
-  actual OS cursor position before/after). Keyboard injection uses the
-  identical `SendInput` mechanism but could not be independently verified on
-  a single shared test machine (typing into the controller UI necessarily
+  host - pairing (including rejection paths) and a real `RTCPeerConnection`
+  offer/ICE exchange were confirmed.
+- Windows app, host role: built and run for real on a Windows 11 machine.
+  Confirmed real DXGI screen capture, real VP8 encoding via SIPSorcery, a
+  real WebRTC negotiation reaching `connected`, **live video of the real
+  desktop rendering in the browser**, and a real `SendInput` mouse click
+  landing at the correct screen location (verified by reading the actual OS
+  cursor position before/after).
+- Windows app, controller role: verified with a **view-only** headless
+  harness mode (`RemoteHost.TestHarness controller ...`, which never calls
+  `SendControl`) connecting to a real host instance on the same machine -
+  confirmed anonymous pairing, WebRTC negotiation reaching `connected`, and
+  real decoded video frames arriving (1920x1080, format `Bgr`). That test run
+  is exactly what caught and fixed a real bug: the video decoder's actual
+  output pixel format didn't match what the rendering code assumed, which
+  would have silently failed to draw anything in the real app.
+- Keyboard injection uses the identical `SendInput` mechanism as the
+  verified mouse path but could not be independently verified end-to-end on
+  a single shared test machine (typing into a controller UI necessarily
   moves real OS focus away from any target app first); this is a limitation
-  of same-machine testing, not something specific to keyboard input, and it
-  resolves itself in real use in this app since host and controller are on
-  separate machines.
+  of same-machine testing, not something specific to keyboard input.
 - Not yet verified by me: the full cross-network acceptance test (two actual
   separate devices, on two different networks, through a deployed VPS +
-  TURN). That requires hardware/network topology I don't have access to in
-  this environment - please run through the "Using it" steps above with your
-  real Android phone / second computer once deployed, and treat that as the
-  final acceptance check.
+  TURN), and real interactive input/file-transfer between two separate
+  machines. That requires hardware/network topology I don't have access to
+  in this environment - please run through the "Using it" steps above with
+  a real second computer or Android phone once deployed, and treat that as
+  the final acceptance check.

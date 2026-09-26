@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { RtcSession } from "../lib/rtc";
 import type { PairedSession } from "./PairForm";
+import { FileTransferChannel } from "../lib/fileTransfer";
+import { FileTransferPanel } from "./FileTransferPanel";
 
 const LONG_PRESS_MS = 500;
 const MOVE_CANCEL_PX = 10;
@@ -50,6 +52,8 @@ export function Viewer({ session, onEnd }: { session: PairedSession; onEnd: () =
   const [connState, setConnState] = useState<RTCPeerConnectionState>("new");
   const [dataReady, setDataReady] = useState(false);
   const [view, setView] = useState({ scale: 1, tx: 0, ty: 0 });
+  const [fileChannel, setFileChannel] = useState<FileTransferChannel | null>(null);
+  const [filesOpen, setFilesOpen] = useState(false);
 
   useEffect(() => {
     const rtc = new RtcSession(session.signaling, session.sessionId, session.iceServers, {
@@ -58,6 +62,7 @@ export function Viewer({ session, onEnd }: { session: PairedSession; onEnd: () =
       },
       onConnectionState: setConnState,
       onDataChannelOpen: () => setDataReady(true),
+      onFilesChannelOpen: (dc) => setFileChannel(new FileTransferChannel(dc)),
     });
     rtcRef.current = rtc;
     rtc.start().catch((err) => console.error("Failed to start WebRTC session", err));
@@ -288,6 +293,9 @@ export function Viewer({ session, onEnd }: { session: PairedSession; onEnd: () =
         <button onClick={openKeyboard} title="Show keyboard">
           ⌨ Keyboard
         </button>
+        <button onClick={() => setFilesOpen((v) => !v)} title="File transfer">
+          📁 Files
+        </button>
         <button onClick={() => setView({ scale: 1, tx: 0, ty: 0 })} title="Reset zoom">
           ⤢ Reset view
         </button>
@@ -303,6 +311,7 @@ export function Viewer({ session, onEnd }: { session: PairedSession; onEnd: () =
           muted
           style={{ transform: `translate(${view.tx}px, ${view.ty}px) scale(${view.scale})` }}
         />
+        {filesOpen && <FileTransferPanel channel={fileChannel} onClose={() => setFilesOpen(false)} />}
       </div>
       <input
         ref={keyboardInputRef}

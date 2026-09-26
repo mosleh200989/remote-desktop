@@ -18,6 +18,7 @@ public partial class MainWindow : Window
     private long _pairingExpiresAt;
     private DateTime _sessionStartedAt;
     private bool _suppressMonitorSelectionEvent;
+    private FileTransferPresenter? _filePresenter;
 
     public MainWindow(HostConfig config)
     {
@@ -115,7 +116,7 @@ public partial class MainWindow : Window
     {
         NoPendingText.Visibility = Visibility.Collapsed;
         var panel = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 4, 0, 4), Tag = req.SessionRequestId };
-        panel.Children.Add(new TextBlock { Text = req.ControllerEmail, VerticalAlignment = VerticalAlignment.Center, Width = 220 });
+        panel.Children.Add(new TextBlock { Text = req.ControllerName, VerticalAlignment = VerticalAlignment.Center, Width = 220 });
         var accept = new Button { Content = "Accept", Padding = new Thickness(10, 4, 10, 4), Margin = new Thickness(0, 0, 6, 0), Background = Brushes.SeaGreen, Foreground = Brushes.White };
         var reject = new Button { Content = "Reject", Padding = new Thickness(10, 4, 10, 4) };
         accept.Click += (_, _) => { _hostService.RespondToPairingRequest(req.SessionRequestId, true); RemovePendingRequest(req.SessionRequestId); };
@@ -132,15 +133,27 @@ public partial class MainWindow : Window
         if (!PendingRequestsPanel.Children.OfType<StackPanel>().Any()) NoPendingText.Visibility = Visibility.Visible;
     }
 
-    private void ShowActiveSession(string controllerEmail)
+    private void ShowActiveSession(string controllerName)
     {
         _sessionStartedAt = DateTime.Now;
         ActiveSessionBorder.Visibility = Visibility.Visible;
-        ActiveSessionText.Text = $"Connected controller: {controllerEmail}";
+        ActiveSessionText.Text = $"Connected controller: {controllerName}";
 
         _indicator ??= CreateIndicator();
-        _indicator.SetControllerEmail(controllerEmail);
+        _indicator.SetControllerName(controllerName);
         _indicator.Show();
+
+        FileTransfersPanel.Children.Clear();
+        _filePresenter = new FileTransferPresenter(_hostService, FileTransfersPanel);
+        FilesBorder.Visibility = Visibility.Visible;
+    }
+
+    private void SendFileButton_Click(object sender, RoutedEventArgs e) => _filePresenter?.PickAndSendFile();
+
+    private void ConnectOutButton_Click(object sender, RoutedEventArgs e)
+    {
+        var connectWindow = new ConnectWindow(_config) { Owner = this };
+        connectWindow.Show();
     }
 
     private ActiveIndicatorWindow CreateIndicator()
@@ -153,6 +166,8 @@ public partial class MainWindow : Window
     private void HideActiveSession(string reason)
     {
         ActiveSessionBorder.Visibility = Visibility.Collapsed;
+        FilesBorder.Visibility = Visibility.Collapsed;
+        _filePresenter = null;
         _indicator?.Hide();
         AppendLog($"Session ended: {reason}");
     }

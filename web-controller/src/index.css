@@ -199,6 +199,78 @@ button.link {
   user-select: none;
 }
 
+.file-panel {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  width: 320px;
+  max-width: calc(100vw - 24px);
+  max-height: calc(100vh - 90px);
+  overflow-y: auto;
+  background: #1a1a1a;
+  border: 1px solid #333;
+  border-radius: 10px;
+  padding: 14px;
+  color: #eee;
+  font-size: 13px;
+}
+.file-panel-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 10px;
+}
+.file-panel button {
+  font-size: 13px;
+  padding: 8px 10px;
+  width: 100%;
+  margin-bottom: 10px;
+}
+.file-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.file-row {
+  border-top: 1px solid #333;
+  padding-top: 8px;
+}
+.file-row-name {
+  word-break: break-word;
+  margin-bottom: 4px;
+}
+.file-row-size {
+  color: #999;
+}
+.file-row-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.file-row-actions button {
+  width: auto;
+  margin-bottom: 0;
+}
+.file-row-progress {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.file-row-bar {
+  flex: 1;
+  height: 6px;
+  background: #333;
+  border-radius: 3px;
+  overflow: hidden;
+}
+.file-row-bar-fill {
+  height: 100%;
+  background: var(--accent);
+}
+.file-row-status {
+  color: #9ca3af;
+}
+
 .hidden-keyboard-input {
   position: fixed;
   bottom: 0;

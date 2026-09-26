@@ -4,7 +4,6 @@ import { createServer } from "node:http";
 import { WebSocketServer } from "ws";
 import "./db"; // ensure schema is created before anything else
 import { env } from "./env";
-import { authRouter } from "./routes/auth";
 import { devicesRouter } from "./routes/devices";
 import { attachSignalingHub } from "./ws/hub";
 import { clearExpiredPairingArtifacts } from "./pairing";
@@ -19,7 +18,6 @@ app.use(
 );
 
 app.get("/health", (_req, res) => res.json({ ok: true }));
-app.use("/api/auth", authRouter);
 app.use("/api/devices", devicesRouter);
 
 const server = createServer(app);

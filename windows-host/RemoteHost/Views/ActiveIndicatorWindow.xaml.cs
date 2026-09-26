@@ -19,9 +19,9 @@ public partial class ActiveIndicatorWindow : Window
         };
     }
 
-    public void SetControllerEmail(string email)
+    public void SetControllerName(string name)
     {
-        MessageText.Text = $"Remote control is active - connected: {email}";
+        MessageText.Text = $"Remote control is active - connected: {name}";
     }
 
     private void EndButton_Click(object sender, RoutedEventArgs e) => EndRequested?.Invoke();

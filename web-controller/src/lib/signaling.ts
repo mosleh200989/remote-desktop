@@ -12,10 +12,10 @@ export class SignalingSocket {
   private ws: WebSocket;
   private listeners = new Set<Listener>();
   private openPromise: Promise<void>;
-  private token: string;
+  private displayName: string;
 
-  constructor(token: string) {
-    this.token = token;
+  constructor(displayName: string) {
+    this.displayName = displayName;
     this.ws = new WebSocket(WS_BASE);
     this.openPromise = new Promise((resolve, reject) => {
       this.ws.addEventListener("open", () => resolve(), { once: true });
@@ -71,11 +71,8 @@ export class SignalingSocket {
   }
 
   async authenticate(): Promise<{ iceServers: IceServerConfig[] }> {
-    await this.send({ type: "controller:auth", token: this.token });
-    const res = await this.waitFor(
-      (m) => m.type === "controller:auth-ok" || m.type === "controller:auth-failed"
-    );
-    if (res.type === "controller:auth-failed") throw new Error("Your session expired, please log in again");
+    await this.send({ type: "controller:hello", displayName: this.displayName });
+    const res = await this.waitFor((m) => m.type === "controller:hello-ok");
     return { iceServers: res.iceServers ?? [] };
   }
 

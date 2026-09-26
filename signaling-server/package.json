@@ -19,7 +19,6 @@
     "dotenv": "^16.4.5",
     "express": "^4.21.0",
     "express-rate-limit": "^7.4.0",
-    "jsonwebtoken": "^9.0.2",
     "nanoid": "^3.3.7",
     "ws": "^8.18.0",
     "zod": "^3.23.8"
@@ -28,7 +27,6 @@
     "@types/bcryptjs": "^2.4.6",
     "@types/cors": "^2.8.17",
     "@types/express": "^4.17.21",
-    "@types/jsonwebtoken": "^9.0.7",
     "@types/node": "^22.10.5",
     "@types/ws": "^8.5.12",
     "tsx": "^4.19.1",

@@ -1,50 +1,42 @@
 import { Router } from "express";
+import rateLimit from "express-rate-limit";
 import { z } from "zod";
-import { db } from "../db";
-import { AuthedRequest, requireAuth } from "../middleware";
-import { createPairingCode, getDeviceByDeviceId, registerDevice } from "../pairing";
+import { registerDevice, checkAndConsumeRegistrationRateLimit } from "../pairing";
 import { env } from "../env";
 
 export const devicesRouter = Router();
-devicesRouter.use(requireAuth);
+
+const registerLimiter = rateLimit({
+  windowMs: 60_000,
+  limit: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: "Too many device registrations from this address, please wait a minute" },
+});
 
 const registerSchema = z.object({
   name: z.string().min(1).max(64),
 });
 
-// Called once by the Windows host app (after the operator signs in inside the
-// host app) to mint a device ID + long-lived host token. The host token is
-// shown once and then stored locally by the host app; the server only ever
-// keeps its bcrypt hash.
-devicesRouter.post("/", async (req: AuthedRequest, res) => {
+// No accounts (AnyDesk-style): anyone can register a device anonymously and
+// get back a device ID + a private host token, shown once. The server only
+// ever stores a bcrypt hash of that token. The pairing code + the host's own
+// explicit accept/reject are what actually authorizes a session, not this.
+devicesRouter.post("/", registerLimiter, async (req, res) => {
   const parsed = registerSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: "Invalid device name" });
-  const { device, hostToken } = await registerDevice(req.userId!, parsed.data.name);
+
+  const ip = req.ip ?? "unknown";
+  if (!checkAndConsumeRegistrationRateLimit(ip)) {
+    return res.status(429).json({ error: "Too many devices registered from this address today" });
+  }
+
+  const { device, hostToken } = await registerDevice(parsed.data.name);
   res.status(201).json({
     deviceId: device.device_id,
     hostToken,
     name: device.name,
   });
-});
-
-devicesRouter.get("/", (req: AuthedRequest, res) => {
-  const rows = db
-    .prepare(
-      "SELECT device_id as deviceId, name, created_at as createdAt, last_seen_at as lastSeenAt FROM devices WHERE owner_user_id = ?"
-    )
-    .all(req.userId!);
-  res.json({ devices: rows });
-});
-
-// Owner-only: mint a fresh pairing code for one of their devices. The
-// controller side never calls this - codes are read off the host app's UI.
-devicesRouter.post("/:deviceId/pairing-codes", (req: AuthedRequest, res) => {
-  const device = getDeviceByDeviceId(req.params.deviceId);
-  if (!device || device.owner_user_id !== req.userId) {
-    return res.status(404).json({ error: "Device not found" });
-  }
-  const { code, expiresAt } = createPairingCode(device.device_id);
-  res.status(201).json({ code, expiresAt });
 });
 
 devicesRouter.get("/ice-servers", (_req, res) => {

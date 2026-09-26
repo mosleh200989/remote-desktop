@@ -18,12 +18,11 @@ public partial class SetupWindow : Window
         ErrorText.Visibility = Visibility.Collapsed;
         var serverUrl = ServerUrlBox.Text.Trim().TrimEnd('/');
         var deviceName = string.IsNullOrWhiteSpace(DeviceNameBox.Text) ? Environment.MachineName : DeviceNameBox.Text.Trim();
-        var email = EmailBox.Text.Trim();
-        var password = PasswordBox.Password;
+        var displayName = string.IsNullOrWhiteSpace(DisplayNameBox.Text) ? Environment.MachineName : DisplayNameBox.Text.Trim();
 
-        if (serverUrl.Length == 0 || email.Length == 0 || password.Length == 0)
+        if (serverUrl.Length == 0)
         {
-            ShowError("Please fill in the server URL, email, and password.");
+            ShowError("Please fill in the server URL.");
             return;
         }
 
@@ -32,11 +31,7 @@ public partial class SetupWindow : Window
         try
         {
             var api = new ApiClient(serverUrl);
-            var auth = RegisterCheckBox.IsChecked == true
-                ? await api.RegisterAsync(email, password)
-                : await api.LoginAsync(email, password);
-
-            var device = await api.RegisterDeviceAsync(auth.Token, deviceName);
+            var device = await api.RegisterDeviceAsync(deviceName);
 
             var wsUrl = ToWebSocketUrl(serverUrl);
             var config = new HostConfig
@@ -46,6 +41,7 @@ public partial class SetupWindow : Window
                 DeviceId = device.DeviceId,
                 HostToken = device.HostToken,
                 DeviceName = device.Name,
+                ControllerDisplayName = displayName,
             };
             config.Save();
             ResultConfig = config;

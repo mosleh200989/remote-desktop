@@ -13,7 +13,7 @@ using SIPSorcery.Net;
 
 namespace RemoteHost;
 
-public sealed record PendingRequest(string SessionRequestId, string ControllerEmail);
+public sealed record PendingRequest(string SessionRequestId, string ControllerName);
 
 /// <summary>
 /// Orchestrates the whole host-side lifecycle: connects to the signaling
@@ -25,16 +25,17 @@ public sealed record PendingRequest(string SessionRequestId, string ControllerEm
 /// control command that didn't arrive over an active, approved session's
 /// data channel.
 /// </summary>
-public sealed class HostService : IAsyncDisposable
+public sealed class HostService : IAsyncDisposable, IFileTransferSession
 {
     private readonly HostConfig _config;
     private readonly SignalingClient _signaling = new();
     private readonly InputInjector _input = new();
-    private readonly Dictionary<string, string> _pendingEmailByRequestId = new();
+    private readonly Dictionary<string, string> _pendingNameByRequestId = new();
     private readonly Stopwatch _frameClock = new();
 
     private PeerConnectionManager? _peer;
     private ScreenCapture? _capture;
+    private FileTransferChannel? _files;
     private string? _activeSessionId;
     private long _lastFramePushedMs;
     private List<RTCIceServer> _iceServers = new();
@@ -44,9 +45,16 @@ public sealed class HostService : IAsyncDisposable
     public event Action<string, long>? OnPairingCode; // code, expiresAtEpochMs
     public event Action<PendingRequest>? OnPairingRequest;
     public event Action<string>? OnPairingRequestExpired; // sessionRequestId
-    public event Action<string, string>? OnSessionStarted; // sessionId, controllerEmail
+    public event Action<string, string>? OnSessionStarted; // sessionId, controllerName
     public event Action<string>? OnSessionEnded; // reason
     public event Action<string>? OnStatus;
+
+    // File transfer pass-through (only meaningful once a session is active).
+    public event Action<IncomingFileOffer>? OnIncomingFileOffer;
+    public event Action<string, long, long>? OnFileProgress;
+    public event Action<string, string>? OnFileReceiveComplete;
+    public event Action<string>? OnFileSendComplete;
+    public event Action<string, bool>? OnFileCancelled;
 
     public HostService(HostConfig config)
     {
@@ -112,7 +120,7 @@ public sealed class HostService : IAsyncDisposable
         {
             case "host:auth-ok":
                 OnConnectedChanged?.Invoke(true);
-                _iceServers = ParseIceServers(root);
+                _iceServers = IceServerParser.Parse(root);
                 OnStatus?.Invoke("Connected.");
                 RequestNewPairingCode();
                 break;
@@ -127,14 +135,14 @@ public sealed class HostService : IAsyncDisposable
 
             case "pairing:incoming-request":
                 var reqId = root.GetProperty("sessionRequestId").GetString()!;
-                var email = root.GetProperty("controllerEmail").GetString()!;
-                _pendingEmailByRequestId[reqId] = email;
-                OnPairingRequest?.Invoke(new PendingRequest(reqId, email));
+                var name = root.GetProperty("controllerName").GetString()!;
+                _pendingNameByRequestId[reqId] = name;
+                OnPairingRequest?.Invoke(new PendingRequest(reqId, name));
                 break;
 
             case "pairing:request-expired":
                 var expiredId = root.GetProperty("sessionRequestId").GetString()!;
-                _pendingEmailByRequestId.Remove(expiredId);
+                _pendingNameByRequestId.Remove(expiredId);
                 OnPairingRequestExpired?.Invoke(expiredId);
                 break;
 
@@ -171,12 +179,21 @@ public sealed class HostService : IAsyncDisposable
 
     private async Task StartSessionAsync(string sessionId)
     {
-        var controllerEmail = _pendingEmailByRequestId.Values.LastOrDefault() ?? "controller";
+        var controllerName = _pendingNameByRequestId.Values.LastOrDefault() ?? "controller";
 
         _peer = new PeerConnectionManager(_iceServers);
         _peer.OnLocalSignal += payload => _ = _signaling.SendAsync(new { type = "signal", sessionId, data = payload });
         _peer.OnConnectionStateChanged += state => OnStatus?.Invoke($"WebRTC: {state}");
         _peer.OnControlMessage += HandleControlMessage;
+        _peer.OnFilesChannelReady += files =>
+        {
+            _files = files;
+            files.OnIncomingOffer += o => OnIncomingFileOffer?.Invoke(o);
+            files.OnProgress += (id, done, total) => OnFileProgress?.Invoke(id, done, total);
+            files.OnReceiveComplete += (id, path) => OnFileReceiveComplete?.Invoke(id, path);
+            files.OnSendComplete += id => OnFileSendComplete?.Invoke(id);
+            files.OnCancelled += (id, remote) => OnFileCancelled?.Invoke(id, remote);
+        };
         await _peer.StartAsync();
 
         var monitors = ScreenCapture.EnumerateMonitors();
@@ -206,8 +223,13 @@ public sealed class HostService : IAsyncDisposable
         };
         _capture.Start();
 
-        OnSessionStarted?.Invoke(sessionId, controllerEmail);
+        OnSessionStarted?.Invoke(sessionId, controllerName);
     }
+
+    public string? OfferFile(string filePath) => _files?.OfferFile(filePath);
+    public void AcceptFileOffer(string id, string savePath, long size) => _files?.AcceptOffer(id, savePath, size);
+    public void RejectFileOffer(string id) => _files?.RejectOffer(id);
+    public void CancelFileTransfer(string id) => _files?.Cancel(id);
 
     private void HandleControlMessage(string json)
     {
@@ -251,28 +273,15 @@ public sealed class HostService : IAsyncDisposable
         _capture = null;
         _peer?.Close();
         _peer = null;
+        _files = null;
         var wasActive = _activeSessionId is not null;
         _activeSessionId = null;
-        _pendingEmailByRequestId.Clear();
+        _pendingNameByRequestId.Clear();
         if (wasActive)
         {
             OnSessionEnded?.Invoke(reason);
             RequestNewPairingCode();
         }
-    }
-
-    private static List<RTCIceServer> ParseIceServers(JsonElement root)
-    {
-        var list = new List<RTCIceServer>();
-        if (!root.TryGetProperty("iceServers", out var arr)) return list;
-        foreach (var item in arr.EnumerateArray())
-        {
-            var server = new RTCIceServer { urls = item.GetProperty("urls").GetString() ?? "" };
-            if (item.TryGetProperty("username", out var u)) server.username = u.GetString();
-            if (item.TryGetProperty("credential", out var c)) server.credential = c.GetString();
-            list.Add(server);
-        }
-        return list;
     }
 
     public async ValueTask DisposeAsync()
