@@ -1,0 +1,28 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.0.31903.59
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "RemoteHost", "RemoteHost\RemoteHost.csproj", "{AC614EBC-CFAA-4A43-8E5B-80A1A652A906}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "RemoteHost.TestHarness", "RemoteHost.TestHarness\RemoteHost.TestHarness.csproj", "{FE8274A4-CB9B-4BD5-940E-59A273A0C073}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{AC614EBC-CFAA-4A43-8E5B-80A1A652A906}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{AC614EBC-CFAA-4A43-8E5B-80A1A652A906}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{AC614EBC-CFAA-4A43-8E5B-80A1A652A906}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{AC614EBC-CFAA-4A43-8E5B-80A1A652A906}.Release|Any CPU.Build.0 = Release|Any CPU
+		{FE8274A4-CB9B-4BD5-940E-59A273A0C073}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{FE8274A4-CB9B-4BD5-940E-59A273A0C073}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{FE8274A4-CB9B-4BD5-940E-59A273A0C073}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{FE8274A4-CB9B-4BD5-940E-59A273A0C073}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+EndGlobal

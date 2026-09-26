@@ -1,0 +1,29 @@
+version: "3.8"
+
+services:
+  signaling:
+    build:
+      context: ../signaling-server
+    restart: unless-stopped
+    environment:
+      PORT: 8443
+      JWT_SECRET: ${JWT_SECRET}
+      DB_PATH: /app/data/remote-desktop.db
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS}
+      PAIRING_CODE_TTL_SECONDS: 180
+      ICE_SERVERS: ${ICE_SERVERS}
+    volumes:
+      - signaling-data:/app/data
+    ports:
+      - "127.0.0.1:8443:8443" # only reachable via the nginx reverse proxy below
+
+  coturn:
+    image: coturn/coturn:4.6
+    restart: unless-stopped
+    network_mode: host
+    volumes:
+      - ./coturn/turnserver.conf:/etc/coturn/turnserver.conf:ro
+    command: ["-c", "/etc/coturn/turnserver.conf"]
+
+volumes:
+  signaling-data:

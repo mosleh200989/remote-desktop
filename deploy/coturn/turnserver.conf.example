@@ -1,0 +1,44 @@
+# Copy to deploy/coturn/turnserver.conf and fill in your domain + a real
+# password before starting. This is a minimal, security-conscious config for
+# a single-VPS TURN relay used only by this remote-desktop app.
+
+listening-port=3478
+tls-listening-port=5349
+
+# Your VPS's public IP address (required so coturn advertises the right
+# relay candidates instead of a private/NAT address).
+external-ip=YOUR_VPS_PUBLIC_IP
+
+# Simple username/password auth matching the ICE_SERVERS credential in
+# deploy/.env. For a public-facing deployment, prefer TURN REST (time-limited
+# credentials, see coturn docs for use-auth-secret) over a single static
+# password shared by every client indefinitely.
+lt-cred-mech
+user=turnuser:changeme-turn-password
+realm=your-vps-domain.example.com
+
+# Restrict the relay port range to keep the VPS firewall rule surface small.
+min-port=49160
+max-port=49200
+
+# Don't let this relay be used to reach the VPS's own private network / cloud
+# metadata endpoint - standard hardening for any public TURN server.
+denied-peer-ip=0.0.0.0-0.255.255.255
+denied-peer-ip=10.0.0.0-10.255.255.255
+denied-peer-ip=100.64.0.0-100.127.255.255
+denied-peer-ip=127.0.0.0-127.255.255.255
+denied-peer-ip=169.254.0.0-169.254.255.255
+denied-peer-ip=172.16.0.0-172.31.255.255
+denied-peer-ip=192.0.0.0-192.0.0.255
+denied-peer-ip=192.168.0.0-192.168.255.255
+denied-peer-ip=198.18.0.0-198.19.255.255
+
+no-cli
+no-tlsv1
+no-tlsv1_1
+fingerprint
+stale-nonce=600
+
+# Optional but recommended once you have a cert (see README's TLS section):
+# cert=/etc/letsencrypt/live/your-vps-domain.example.com/fullchain.pem
+# pkey=/etc/letsencrypt/live/your-vps-domain.example.com/privkey.pem
